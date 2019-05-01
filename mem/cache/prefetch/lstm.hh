@@ -59,6 +59,8 @@ class LSTMPrefetcher : public QueuedPrefetcher
 //CHECK all syntax even little things like ++
 //vars for the final address calculation
 //make sure array access in back and forward are correct
+//check transpose
+
 
     int curr_offset_delta;
     int curr_delta;
@@ -78,12 +80,13 @@ class LSTMPrefetcher : public QueuedPrefetcher
 
 //backprop variables
 
-    int delta_y[INPUT_SIZE];
-    int delta_o_hat[INPUT_SIZE];
-    int delta_c[INPUT_SIZE];
-    int delta_f_hat[INPUT_SIZE]; //change these later
-    int delta_i_hat[INPUT_SIZE];
-    int delta_z_hat[INPUT_SIZE];
+    int first_delta_y[INPUT_SIZE];
+    double delta_y[INPUT_SIZE];
+    double delta_o_hat[INPUT_SIZE];
+    double delta_c[INPUT_SIZE];
+    double delta_f_hat[INPUT_SIZE]; //change these later
+    double delta_i_hat[INPUT_SIZE];
+    double delta_z_hat[INPUT_SIZE];
 
 
     struct offset_table_entry{
@@ -163,7 +166,7 @@ private:
     bool checkoffset(Addr pkt_addr);
     bool check_page_table();
 
-    //equations and variable names taken from "LSTM: A Search Space Odyssey"
+    //equations and variable names taken from "LSTM: Aint Search Space Odyssey"
     void forward_prop(Addr pkt_addr);
     void backward_prop(Addr pkt_addr);
     void evict_LRU(Addr pkt_addr);
@@ -179,14 +182,17 @@ private:
     //weights are N by M where N is the number of blocks and M is the input size
 
     void matrix_product_forward_weights_int(double first[NUM_BLOCKS][INPUT_SIZE], int second[NUM_BLOCKS], double result[INPUT_SIZE]);
+    void int_to_double_array(int first[NUM_BLOCKS], double result[INPUT_SIZE]);
     void matrix_product_forward_weights_double(double first[NUM_BLOCKS][INPUT_SIZE], double second[NUM_BLOCKS], double result[INPUT_SIZE]);
     void outer_product_backprop(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]);
+    void outer_product_double(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]);
     //for both forward and backprop
     void pointwise_product(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]);
+    void pointwise_product_int(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE]);
     void add_matrices(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE]);
     void add_matrices_double(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]);
     void add_two_d_matrices_double(double first[INPUT_SIZE][INPUT_SIZE], double second[INPUT_SIZE][INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]);
-    void scalar_multiply_two_by_two_matrix(double first[INPUT_SIZE][INPUT_SIZE],  double result[INPUT_SIZE][INPUT_SIZE]);
+    void scalar_multiply_two_by_two_matrix(double scalar, double first[INPUT_SIZE][INPUT_SIZE],  double result[INPUT_SIZE][INPUT_SIZE]);
     void transpose_back_prop(double first[INPUT_SIZE][INPUT_SIZE],  double result[INPUT_SIZE][INPUT_SIZE]);
     void to_binary_array(int num, int array[INPUT_SIZE]); //works
     int from_array_to_num(int array[INPUT_SIZE]);
