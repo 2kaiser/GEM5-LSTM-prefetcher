@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2015 ARM Limited
+ * Copyright (c) 2012-2013, 2015, 2018 ARM Limited
  * Copyright (c) 2016 Google Inc.
  * Copyright (c) 2017, Centre National de la Recherche Scientifique
  * All rights reserved.
@@ -84,11 +84,8 @@ class CommMonitor : public MemObject
     void regProbePoints() override;
 
   public: // MemObject interfaces
-    BaseMasterPort& getMasterPort(const std::string& if_name,
-                                  PortID idx = InvalidPortID) override;
-
-    BaseSlavePort& getSlavePort(const std::string& if_name,
-                                PortID idx = InvalidPortID) override;
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
   private:
 
@@ -232,6 +229,11 @@ class CommMonitor : public MemObject
             mon.recvRespRetry();
         }
 
+        bool tryTiming(PacketPtr pkt)
+        {
+            return mon.tryTiming(pkt);
+        }
+
       private:
 
         CommMonitor& mon;
@@ -268,6 +270,8 @@ class CommMonitor : public MemObject
     void recvRespRetry();
 
     void recvRangeChange();
+
+    bool tryTiming(PacketPtr pkt);
 
     /** Stats declarations, all in a struct for convenience. */
     struct MonitorStats

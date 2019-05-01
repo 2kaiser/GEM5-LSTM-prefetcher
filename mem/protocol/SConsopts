@@ -39,7 +39,6 @@ all_protocols.extend([
     'GPU_RfO',
     'MOESI_AMD_Base',
     'MESI_Two_Level',
-    'MSI',
     'MESI_Three_Level',
     'MI_example',
     'MOESI_CMP_directory',

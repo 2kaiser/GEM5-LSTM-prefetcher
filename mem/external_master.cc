@@ -57,12 +57,11 @@ ExternalMaster::ExternalMaster(ExternalMasterParams *params) :
     portName(params->name + ".port"),
     portType(params->port_type),
     portData(params->port_data),
-    masterId(params->system->getMasterId(params->name))
+    masterId(params->system->getMasterId(this))
 {}
 
-BaseMasterPort &
-ExternalMaster::getMasterPort(const std::string &if_name,
-    PortID idx)
+Port &
+ExternalMaster::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "port") {
         DPRINTF(ExternalPort, "Trying to bind external port: %s %s\n",
@@ -84,7 +83,7 @@ ExternalMaster::getMasterPort(const std::string &if_name,
         }
         return *externalPort;
     } else {
-        return MemObject::getMasterPort(if_name, idx);
+        return MemObject::getPort(if_name, idx);
     }
 }
 

@@ -295,7 +295,7 @@ class Bridge : public MemObject
          *
          * @return true if we find a match
          */
-        bool checkFunctional(PacketPtr pkt);
+        bool trySatisfyFunctional(PacketPtr pkt);
 
       protected:
 
@@ -316,12 +316,10 @@ class Bridge : public MemObject
 
   public:
 
-    virtual BaseMasterPort& getMasterPort(const std::string& if_name,
-                                          PortID idx = InvalidPortID);
-    virtual BaseSlavePort& getSlavePort(const std::string& if_name,
-                                        PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
-    virtual void init();
+    void init() override;
 
     typedef BridgeParams Params;
 
