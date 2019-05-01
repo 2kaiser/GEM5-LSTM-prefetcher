@@ -36,7 +36,8 @@
 #define LSB_MASK 1 //history length
 #define THRESHHOLD .5 //for stochastic choice
 #define NUM_DELTA_BITS 7 //number of bits used for delta
-#define NUM_PG_NUM_BITS 7 //number of bits used for delta
+#define NUM_PG_NUM_BITS 6 //number of bits used for page number
+#define BACKPROP_INPUT_MASK 8191 //number of bits used for page number
 
 
 struct LSTMPrefetcherParams;
@@ -55,14 +56,19 @@ class LSTMPrefetcher : public QueuedPrefetcher
 //default cache line size is 64 kb
 //assume the same page number as origicanl address
 //should I do a hashing for the page numbers?  from 8 to
+//CHECK all syntax even little things like ++
+//vars for the final address calculation
+//make sure array access in back and forward are correct
 
-//vars for the final address
     int curr_offset_delta;
+    int curr_delta;
     int curr_page_num;
     int curr_offset;
     int curr_prevAddr;
+    int prev_prevAddr;
     int final_prediction_delta;
     int curr_page_table_idx;
+
 
     double learning_rate;
     int prediction;
@@ -72,11 +78,12 @@ class LSTMPrefetcher : public QueuedPrefetcher
 
 //backprop variables
 
-    int back_block_input[INPUT_SIZE];
-    int back_input[INPUT_SIZE];
-    int back_forget[INPUT_SIZE];
-    int back_output[INPUT_SIZE]; //change these later
-
+    int delta_y[INPUT_SIZE];
+    int delta_o_hat[INPUT_SIZE];
+    int delta_c[INPUT_SIZE];
+    int delta_f_hat[INPUT_SIZE]; //change these later
+    int delta_i_hat[INPUT_SIZE];
+    int delta_z_hat[INPUT_SIZE];
 
 
     struct offset_table_entry{
@@ -94,6 +101,7 @@ class LSTMPrefetcher : public QueuedPrefetcher
       int hidden_state [INPUT_SIZE];
     };
     struct forward_pass_args{
+      int x_t[INPUT_SIZE];
       double z_hat [INPUT_SIZE]; //block input
       double z [INPUT_SIZE];
       double i_hat [INPUT_SIZE]; //input gate
@@ -143,7 +151,10 @@ private:
       double weighto_r[NUM_BLOCKS][INPUT_SIZE];
       double weightz_i[NUM_BLOCKS][INPUT_SIZE];
       double weightz_r[NUM_BLOCKS][INPUT_SIZE];
-      int biasi, biasf, biaso, biasz;
+      double biasi[NUM_BLOCKS];
+      double biasf[NUM_BLOCKS];
+      double biaso[NUM_BLOCKS];
+      double biasz[NUM_BLOCKS];
 
 
     //check "A Space Odyssey" for LSTM formulas
@@ -169,20 +180,23 @@ private:
 
     void matrix_product_forward_weights_int(double first[NUM_BLOCKS][INPUT_SIZE], int second[NUM_BLOCKS], double result[INPUT_SIZE]);
     void matrix_product_forward_weights_double(double first[NUM_BLOCKS][INPUT_SIZE], double second[NUM_BLOCKS], double result[INPUT_SIZE]);
-
     void outer_product_backprop(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]);
     //for both forward and backprop
     void pointwise_product(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]);
     void add_matrices(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE]);
     void add_matrices_double(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]);
-
+    void add_two_d_matrices_double(double first[INPUT_SIZE][INPUT_SIZE], double second[INPUT_SIZE][INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]);
+    void scalar_multiply_two_by_two_matrix(double first[INPUT_SIZE][INPUT_SIZE],  double result[INPUT_SIZE][INPUT_SIZE]);
+    void transpose_back_prop(double first[INPUT_SIZE][INPUT_SIZE],  double result[INPUT_SIZE][INPUT_SIZE]);
     void to_binary_array(int num, int array[INPUT_SIZE]); //works
     int from_array_to_num(int array[INPUT_SIZE]);
     void form_input(int page_num, int delta, int arrary[INPUT_SIZE]);
     void stochastic_choice(int threshhold, double input[INPUT_SIZE],int result[INPUT_SIZE]);
     void sigmoid(double first[INPUT_SIZE], double result[INPUT_SIZE]);
+    void dydx_sigmoid(double first[INPUT_SIZE], double result[INPUT_SIZE]);
+    void dydx_hyperbolicTanH(double first[INPUT_SIZE], double result[INPUT_SIZE]);
     void hyperbolicTanH(double first[INPUT_SIZE], double result[INPUT_SIZE]);
-    void add_bias(int num, double first[INPUT_SIZE], double result[INPUT_SIZE]);
+    void add_bias(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]);
 
 
   public:

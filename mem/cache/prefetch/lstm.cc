@@ -84,16 +84,17 @@ LSTMPrefetcher::LSTMPrefetcher(const LSTMPrefetcherParams *p)
       }
     }
     //refer to An Empirical Exploration of Recurrent Network Architectures (Jozefowicz et al., 2015): for bias initialization
-
-     biasi  = 1;
-     biasf = 1;
-     biaso = 1;
-     biasz = 1;
-
+    for(int i = 0; i < INPUT_SIZE; i++){
+     biasi[i]  = 1;
+     biasf[i] = 1;
+     biaso[i] = 1;
+     biasz[i] = 1;
+}
     //initialze offset table states to 0
     for(int i = 0; i < OFFSET_TABLE_SIZE; i++){
       offset_table[i].state = 0;
     }
+    return;
 }
 
 inline void
@@ -102,14 +103,157 @@ LSTMPrefetcher::backward_prop(Addr curr_pkt_addr){
   add 0 to dy for the 5th timestep since there are no future time steps
   */
 //L2 LOSS FUNCTION -> pred - actual
-int delta_t =
+int delta_t = ((final_prediction_delta - curr_delta)&DELTA_MASK) << DELTA_SHIFT;
+double temp[INPUT_SIZE];
+double temp2[INPUT_SIZE];
+double temp3[INPUT_SIZE];
+double temp4[INPUT_SIZE][INPUT_SIZE];
+double temp5[INPUT_SIZE];
+double allzeros[INPUT_SIZE];
+for(int i =0; i<INPUT_SIZE;i++){
+  allzeros[i] = 0;
+}
+for(int i = 0; i < NUM_OF_DELTAS; i++){
+  if(i ==0){
 
+    //use delta_t for delta E / delta y_t or the first time step back propagation
+    int big_delta = (((curr_page_num <<PREV_ADDR_SHIFT) + delta_t) >> DELTA_SHIFT) & BACKPROP_INPUT_MASK;
+    to_binary_array(big_delta,delta_y);
+    hyperbolicTanH(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].c,temp);
+    //delta o hat
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].o_hat,temp2);
+    pointwise_product(temp, temp2, temp3);
+    pointwise_product(temp3, delta_y, delta_o_hat);
+//delta c hat
+    dydx_hyperbolicTanH(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].c,temp);
+    pointwise_product(delta_y,delta_o_hat, temp2);
+    pointwise_product(temp, temp2, delta_c);
+//delta f
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].f_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-1].c, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_f_hat);
+//detla f hat
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].i_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].z, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_i_hat);
+//delta i hat
+    dydx_hyperbolicTanH(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].z_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].i, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_z_hat);
+
+    //update the input weights
+    outer_product_backprop(delta_z_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightz_i,temp2);
+    add_two_d_matrices_double(temp2, temp, weightz_i);
+    outer_product_backprop(delta_i_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighti_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weighti_i);
+    outer_product_backprop(delta_f_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightf_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weightf_i);
+    outer_product_backprop(delta_o_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighto_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weighto_i);
+
+    //update biases
+    add_matrices_double(biasf, delta_f_hat, temp);
+    add_matrices_double(temp, allzeros, biasf);
+    add_matrices_double(biasi, delta_f_hat, temp);
+    add_matrices_double(temp, allzeros, biasi);
+    add_matrices_double(biaso, delta_f_hat, temp);
+    add_matrices_double(temp, allzeros, biaso);
+    add_matrices_double(biasz, delta_z_hat, temp);
+    add_matrices_double(temp, allzeros, biasz);
+
+  }
+  else{
+    //update recurrent weights first
+    outer_product_backprop(delta_z_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].y, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightz_r,temp2);
+    add_two_d_matrices_double(temp2, temp, weightz_r);
+    outer_product_backprop(delta_i_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].y, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighti_r,temp2);
+    add_two_d_matrices_double(temp2, temp,weighti_r);
+    outer_product_backprop(delta_f_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].y, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightf_r,temp2);
+    add_two_d_matrices_double(temp2, temp,weightf_r);
+    outer_product_backprop(delta_o_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].y, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighto_r,temp2);
+    add_two_d_matrices_double(temp2, temp,weighto_r);
+
+
+    //delta y
+    int big_delta = (((curr_page_num <<PREV_ADDR_SHIFT) + page_table[curr_page_table_idx].prevDeltas[NUM_OF_DELTAS-i]) >> DELTA_SHIFT) & BACKPROP_INPUT_MASK;
+    to_binary_array(big_delta,temp3);
+    transpose_back_prop(weightz_r, temp4);
+    matrix_product_forward_weights_double(temp4, delta_z_hat, temp1);
+    add_matrices_double(temp, temp1, temp2);
+
+    transpose_back_prop(weighti_r, temp4);
+    matrix_product_forward_weights_double(temp4, delta_i_hat, temp1);
+    add_matrices_double(temp2, temp1, temp);
+
+    transpose_back_prop(weightf_r, temp4);
+    matrix_product_forward_weights_double(temp4, delta_f_hat, temp1);
+    add_matrices_double(temp, temp1, temp2);
+
+    transpose_back_prop(weighto_r, temp4);
+    matrix_product_forward_weights_double(temp4, delta_o_hat, temp1);
+    add_matrices_double(temp, temp1, temp2);
+
+    add_matrices(temp2, temp3, delta_y);
+    //delta o hat
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].o_hat,temp2);
+    pointwise_product(temp, temp2, temp3);
+    pointwise_product(temp3, delta_y, delta_o_hat);
+    //delta c
+    dydx_hyperbolicTanH(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].c,temp);
+    pointwise_product(delta_y,delta_o_hat, temp2);
+    pointwise_product(delta_c,page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].f, temp3);
+    pointwise_product(temp, temp2, temp5);
+    add_matrices_double(temp3, temp5, delta_c);
+    //delta f
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].f_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-1-i].c, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_f_hat);
+    //delta i hat
+    dydx_hyperbolicTanH(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].z_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].i, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_z_hat);
+
+    //delta z hat
+    dydx_sigmoid(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS].i_hat,temp);
+    pointwise_product(page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].z, delta_c,temp2);
+    pointwise_product(temp, temp2, delta_i_hat);
+
+    //update the input weights
+    outer_product_backprop(delta_z_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightz_i,temp2);
+    add_two_d_matrices_double(temp2, temp, weightz_i);
+    outer_product_backprop(delta_i_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighti_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weighti_i);
+    outer_product_backprop(delta_f_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weightf_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weightf_i);
+    outer_product_backprop(delta_o_hat, page_table[curr_page_table_idx].stateSpace.states[NUM_OF_DELTAS-i].x_t, temp);
+    scalar_multiply_two_by_two_matrix(learning_rate,weighto_i,temp2);
+    add_two_d_matrices_double(temp2, temp,weighto_i);
+
+  }
+}
   return;
-
 
 }
 
-
+inline void
+LSTMPrefetcher::scalar_multiply_two_by_two_matrix(int scalar, double first[INPUT_SIZE][INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]){
+  for(int i = 0; i < INPUT_SIZE; ++i){
+    for(int J = 0; i < INPUT_SIZE; ++i){
+      result[i][j] = scalar*first[i][j];
+  }
+}
+}
 
 inline void
 LSTMPrefetcher::matrix_product_forward_weights_int(double first[NUM_BLOCKS][INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE]){
@@ -135,8 +279,6 @@ LSTMPrefetcher::matrix_product_forward_weights_double(double first[NUM_BLOCKS][I
           }
     return;
 }
-
-
 inline void
 LSTMPrefetcher::outer_product_backprop(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]){
   for(int i = 0; i < INPUT_SIZE; i++){
@@ -151,19 +293,32 @@ LSTMPrefetcher::outer_product_backprop(double first[INPUT_SIZE], int second[INPU
 //for both forward and backprop
 inline void
 LSTMPrefetcher::pointwise_product(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]){
-
-  for(int i = 0; i < INPUT_SIZE; ++i){
-
+  for(int i = 0; i < INPUT_SIZE; i++){
     result[i] = first[i] * second[i];
-
-
   }
         return;
 }
 inline void
 LSTMPrefetcher::add_matrices(double first[INPUT_SIZE], int second[INPUT_SIZE], double result[INPUT_SIZE]){
-  for(int i = 0; i < INPUT_SIZE; ++i){
+  for(int i = 0; i < INPUT_SIZE; i++){
     result[i] = first[i] + second[i];
+  }
+}
+inline void
+LSTMPrefetcher::add_two_d_matrices_double(double first[INPUT_SIZE][INPUT_SIZE], double second[INPUT_SIZE][INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE])
+{  for(int i = 0; i < INPUT_SIZE; i++){
+    for(int J = 0; i < INPUT_SIZE; i++){
+      result[i][j] = first[i][j] + second[i][j];
+  }
+}
+
+}
+inline void
+LSTMPrefetcher::transpose_back_prop(double first[INPUT_SIZE][INPUT_SIZE], double result[INPUT_SIZE][INPUT_SIZE]){
+  for(int i =0; i < INPUT_SIZE; i++){
+    for(int j = 0; j < INPUT_SIZE; j++){
+      result[j][i] = first[i][j];
+    }
   }
 }
 inline void
@@ -179,10 +334,6 @@ LSTMPrefetcher::to_binary_array(int num, int array[INPUT_SIZE]){
   }
   return;
 }
-
-
-
-
 inline int
 LSTMPrefetcher::from_array_to_num(int array[NUM_DELTA_BITS]){
   int result = 0;
@@ -197,7 +348,6 @@ LSTMPrefetcher::from_array_to_num(int array[NUM_DELTA_BITS]){
     result += pow(2,i);
   }
   }
-
   }
 }
   else{
@@ -270,6 +420,15 @@ LSTMPrefetcher::sigmoid(double first[INPUT_SIZE], double result[INPUT_SIZE]){
     result[i] = 1/(1+ exp(first[i]));
   }
 }
+
+inline void
+LSTMPrefetcher::dydx_sigmoid(double first[INPUT_SIZE], double result[INPUT_SIZE]){
+  for(int i = 0; i < INPUT_SIZE; ++i){
+    result[i] = (1/(1+ exp(first[i])))*(1-(1/(1+ exp(first[i]))));
+  }
+
+}
+
 inline void
 LSTMPrefetcher::hyperbolicTanH(double first[INPUT_SIZE], double result[INPUT_SIZE]){
   for(int i = 0; i < INPUT_SIZE; ++i){
@@ -277,11 +436,18 @@ LSTMPrefetcher::hyperbolicTanH(double first[INPUT_SIZE], double result[INPUT_SIZ
   }
 }
 
+inline void
+LSTMPrefetcher::dydx_hyperbolicTanH(double first[INPUT_SIZE], double result[INPUT_SIZE]){
+
+  for(int i = 0; i < INPUT_SIZE; ++i){
+    result[i] = 1- (tanh(first[i])*tanh(first[i]));
+  }
+}
 
 inline void
-LSTMPrefetcher::add_bias(int num, double first[INPUT_SIZE], double result[INPUT_SIZE]){
+LSTMPrefetcher::add_bias(double first[INPUT_SIZE], double second[INPUT_SIZE], double result[INPUT_SIZE]){
   for(int i = 0; i < INPUT_SIZE; ++i){
-    result[i] = first[i] + num;
+    result[i] = second[i] + first[i];
   }
 }
 
@@ -307,6 +473,7 @@ LSTMPrefetcher::forward_prop(Addr pkt_addr){
       int input;
       input = (curr_pgnum <<NUM_PG_NUM_BITS) + curr_offset_delta;
       to_binary_array(input,x_t);
+      to_binary_array(input,page_table[curr_page_table_idx].stateSpace.states[i].x_t);
 
       //calculate using the previous state variables
       //block input calculation
@@ -372,6 +539,7 @@ LSTMPrefetcher::forward_prop(Addr pkt_addr){
         int input;
         input = (curr_pgnum <<NUM_PG_NUM_BITS) + page_table[curr_pgnum].prevDeltas[i];
         to_binary_array(input,x_t);
+        to_binary_array(input,page_table[curr_page_table_idx].stateSpace.states[i].x_t);
 
       //block input calculation
       matrix_product_forward_weights_int(weightz_i, x_t,temp2);
@@ -425,6 +593,7 @@ LSTMPrefetcher::forward_prop(Addr pkt_addr){
       int input;
       input = (curr_pgnum <<NUM_PG_NUM_BITS) + page_table[curr_pgnum].prevDeltas[i];
       to_binary_array(input,x_t);
+      to_binary_array(input,page_table[curr_page_table_idx].stateSpace.states[i].x_t);
 
       //block input calculation
       matrix_product_forward_weights_int(weightz_i, x_t,temp2);
@@ -481,7 +650,7 @@ LSTMPrefetcher::forward_prop(Addr pkt_addr){
 }
 inline void
 LSTMPrefetcher::new_page_entry(){
-
+  prev_prevAddr = curr_prevAddr;
   page_table_entry new_entry = {
     curr_page_num,
     curr_prevAddr,
@@ -569,6 +738,8 @@ LSTMPrefetcher::check_page_table(){
   for(int i = 0; i < PAGE_TABLE_SIZE; i++){
     if(page_table[i].pageNumber == curr_page_num){
       curr_page_table_idx = i;
+      curr_prevAddr = page_table_entry[i].preAddr;
+      page_table_entry[i].preAddr = curr_prevAddr;
       break;
     }
   }
@@ -661,6 +832,7 @@ LSTMPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
         if(check_page_table()){
           //found a offset hit in prev4fetchAddrs and do a prediction with the four deltas
           //update weights before prediction
+            curr_delta = prev_prevAddr - curr_prevAddr;
             backward_prop(pkt_addr);
             forward_prop(pkt_addr);
 
