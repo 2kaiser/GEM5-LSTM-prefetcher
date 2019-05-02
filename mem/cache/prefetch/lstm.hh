@@ -176,7 +176,7 @@ private:
     //operations
 
 
-
+    double fRand(double fMin, double fMax);
       //functions for 2d arrays
       // R1 and C1 is the first operand for all functions
     //weights are N by M where N is the number of blocks and M is the input size

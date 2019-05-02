@@ -3,6 +3,9 @@
 using namespace std;
 #include <cmath>
 #define LSB_MASK 1
+#include <random>
+#include <cstdlib>
+#include <ctime>
 
 inline int
 from_array_to_num(int array[INPUT_SIZE]){
@@ -79,7 +82,7 @@ to_binary_array(int num, int array[INPUT_SIZE]){
 }
 
 int main(){
-
+/*
 
   int array[13];
   for(int i = 0; i<INPUT_SIZE;i++){
@@ -97,6 +100,15 @@ int main(){
 
   }
   cout << from_array_to_num(array) << '\n';
+*/
+  double lower_bound = -.001;
+  double upper_bound = .001;
+  uniform_real_distribution<double> unif(lower_bound,upper_bound);
+  default_random_engine re;
+  for(int i = 0; i < 10; i++){
+    printf("first %f second %f \n",unif(re), unif(re));
+
+  }
 
   return 1;
 }

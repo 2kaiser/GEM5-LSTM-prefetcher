@@ -53,6 +53,15 @@
 #include "debug/HWPrefetch.hh"
 #include <cstdlib>
 #include "params/LSTMPrefetcher.hh"
+#include <random>
+
+
+double
+LSTMPrefetcher::fRand(double fMin, double fMax)
+{
+    double f = (double)rand() / RAND_MAX;
+    return fMin + f * (fMax - fMin);
+}
 
 
 LSTMPrefetcher::LSTMPrefetcher(const LSTMPrefetcherParams *p)
@@ -61,29 +70,30 @@ LSTMPrefetcher::LSTMPrefetcher(const LSTMPrefetcherParams *p)
     // Don't consult LSTM prefetcher on instruction accesses
     //from thesis paper
     learning_rate = .2;
-    float_t init_weights_low = -.0001;
-    float_t init_weights_hi = .0001;
-    float_t hi = init_weights_low;
-    float_t low =  init_weights_hi;
-    srand (static_cast <unsigned> (time(0)));
+
+    double lower_bound = -.001;
+    double upper_bound = .001;
+    std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
+    std::default_random_engine re;
     //initializing the LSTM parameters
     //initialze weights to random value between -10^-5 and 10^-5
     //from LSTM master thesis paper
     for(int i = 0; i< WEIGHT_SIZE_DIM; i++){
-      for(int j =0; j < WEIGHT_SIZE_DIM; i++){
+      for(int j =0; j < WEIGHT_SIZE_DIM; j++){
 
 
-        weighti_i[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weighti_r[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weightf_i[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weightf_r[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weighto_i[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weighto_r[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weightz_i[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
-        weightz_r[i][j] = low + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(hi-low)));
+        weighti_i[i][j] = unif(re); //low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weighti_r[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weightf_i[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weightf_r[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weighto_i[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weighto_r[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weightz_i[i][j] = unif(re);//low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
+        weightz_r[i][j] = unif(re); //low + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(hi-low)));
       }
     }
     //refer to An Empirical Exploration of Recurrent Network Architectures (Jozefowicz et al., 2015): for bias initialization
+
     for(int i = 0; i < INPUT_SIZE; i++){
      biasi[i]  = 1;
      biasf[i] = 1;
@@ -771,7 +781,7 @@ LSTMPrefetcher::new_page_entry(){
 inline bool
 LSTMPrefetcher::check_page_table(){
   curr_page_table_idx = -1;
-  for(int i = 0; i < PAGE_TABLE_SIZE; i++){
+  for(int i = 0; i < page_table.size(); i++){
     if(page_table[i].pageNumber == curr_page_num){
       curr_page_table_idx = i;
       curr_prevAddr = page_table[i].preAddr;
@@ -850,8 +860,6 @@ LSTMPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
          DPRINTF(HWPrefetch, "Ignoring request with no PC.\n");
          return;
      }
-
-
     // Get required packet info
     Addr pkt_addr = pfi.getAddr();
 
@@ -862,8 +870,8 @@ LSTMPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
     curr_offset = (pkt_addr & PAGE_OFFSET_MASK);
     curr_page_num = (pkt_addr >> PAGE_NUMBER_SHIFT) & PAGE_NUMBER_MASK_FOR_PRED;
     curr_prevAddr = (pkt_addr >> PREV_ADDR_SHIFT) & PREV_ADDR_MASK;
-
     if (checkoffset(pkt_addr)) {
+/*
         //evict or update page table entry
         if(check_page_table()){
           //found a offset hit in prev4fetchAddrs and do a prediction with the four deltas
@@ -915,6 +923,24 @@ LSTMPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
 
 
           }
+*/
+              //first access to a page so use the delta in the offset table
+              // Miss in page table
+              //push on addr using delta from offset table
+              Addr new_addr = (curr_prevAddr << PREV_ADDR_SHIFT) + (curr_offset_delta << DELTA_SHIFT);
+              //update page_table
+              page_table[curr_page_table_idx].prevDeltas[0] = curr_offset_delta;
+              page_table[curr_page_table_idx].prev4Addrs[0] = curr_offset_delta; // curr_offset;
+              if (samePage(pkt_addr, new_addr)) {
+                  DPRINTF(HWPrefetch, "Queuing prefetch to %#x.\n", new_addr);
+                  addresses.push_back(AddrPriority(new_addr, 0));
+              } else {
+                  // Record the number of page crossing prefetches generated
+                  DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+                  return;
+              }
+
+
 
     } else {
 
